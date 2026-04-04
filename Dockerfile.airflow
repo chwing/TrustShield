@@ -1,0 +1,32 @@
+FROM apache/airflow:2.7.1
+
+USER root
+RUN apt-get update && apt-get install -y git default-jdk curl && apt-get clean
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+
+# Pre-download Spark JARs for Airflow local runs
+RUN mkdir -p /home/airflow/.ivy2/jars && \
+    curl -o /home/airflow/.ivy2/jars/hadoop-aws-3.3.4.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
+    curl -o /home/airflow/.ivy2/jars/aws-java-sdk-bundle-1.12.262.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar && \
+    chown -R airflow: /home/airflow/.ivy2
+
+USER airflow
+
+# 1. Install PyTorch 2.10.0 FIRST (CPU version for stability in Docker)
+# We use the CPU index to keep the image smaller and prevent "blocking"
+RUN pip install --no-cache-dir \
+    torch \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# 2. Install everything else with constraints
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-amazon \
+    apache-airflow-providers-apache-spark \
+    psycopg2-binary \
+    feedparser requests pandas \
+    transformers pyspark \
+    pyarrow elasticsearch \
+    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.1/constraints-3.8.txt"
+
+# 3. Install atproto separately to get a newer version (avoiding old constraint)
+RUN pip install --no-cache-dir atproto

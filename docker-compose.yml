@@ -1,0 +1,137 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    HF_HOME: /opt/airflow/.cache/huggingface
+    AIRFLOW_CONN_MINIO_CONN: "aws://trustshield_admin:trustshield_password@minio:9000?endpoint_url=http%3A%2F%2Fminio%3A9000&region_name=us-east-1"
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./ml_inference:/opt/airflow/ml_inference
+    - ./hf_cache:/opt/airflow/.cache/huggingface
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:13
+    environment: [POSTGRES_USER=airflow, POSTGRES_PASSWORD=airflow, POSTGRES_DB=airflow]
+    networks:
+      default:
+        aliases:
+          - postgres
+
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+
+  minio:
+    image: minio/minio
+    ports: ["9000:9000", "9001:9001"]
+    environment:
+      MINIO_ROOT_USER: trustshield_admin
+      MINIO_ROOT_PASSWORD: trustshield_password
+    command: server /data --console-address ":9001"
+    volumes: ["./data/minio:/data"]
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports: ["8081:8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - HF_HOME=/opt/spark/.cache/huggingface
+    ports:
+      - "8082:8080"
+      - "7077:7077"
+    volumes:
+      - ./hf_cache:/opt/spark/.cache/huggingface
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-worker
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      - HF_HOME=/opt/spark/.cache/huggingface
+    volumes:
+      - ./hf_cache:/opt/spark/.cache/huggingface
+    depends_on:
+      - spark-master
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.10
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports: ["9200:9200"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - ES_ENDPOINT=http://elasticsearch:9200
+      - ES_INDEX=trustshield_articles
+    volumes:
+      - ./ml_inference:/app/ml_inference
+    ports:
+      - "8000:8000"
+    depends_on:
+      - elasticsearch
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+networks:
+  default:
+    name: trustshield_network

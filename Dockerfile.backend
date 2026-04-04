@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ .
+
+ENV ES_ENDPOINT=http://elasticsearch:9200
+ENV ES_INDEX=trustshield_articles
+
+EXPOSE 8000
+
+CMD ["python", "main.py"]
