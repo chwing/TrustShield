@@ -14,7 +14,7 @@ class TrustShieldDataValidator:
 
     def expect_column_to_not_be_null(self, column):
         null_count = self.df[column].isna().sum()
-        status = null_count == 0
+        status = bool(null_count == 0)
         if not status: self.success = False
         
         self.results.append({
@@ -25,7 +25,7 @@ class TrustShieldDataValidator:
 
     def expect_column_values_to_be_between(self, column, min_val, max_val):
         out_of_range = self.df[(self.df[column] < min_val) | (self.df[column] > max_val)]
-        status = len(out_of_range) == 0
+        status = bool(len(out_of_range) == 0)
         if not status: self.success = False
 
         self.results.append({
@@ -36,7 +36,7 @@ class TrustShieldDataValidator:
 
     def expect_column_values_to_be_in_set(self, column, allowed_set):
         invalid_values = self.df[~self.df[column].isin(allowed_set)]
-        status = len(invalid_values) == 0
+        status = bool(len(invalid_values) == 0)
         if not status: self.success = False
 
         self.results.append({
@@ -51,8 +51,8 @@ class TrustShieldDataValidator:
     def get_report(self):
         return {
             "timestamp": datetime.now().isoformat(),
-            "overall_success": self.success,
-            "total_records": len(self.df),
+            "overall_success": bool(self.success),
+            "total_records": int(len(self.df)),
             "validations": self.results
         }
 

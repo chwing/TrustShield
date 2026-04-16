@@ -24,6 +24,23 @@ import {
 
 const API_BASE = "http://localhost:8000"; // Update this to your FastAPI URL
 
+const parseEntities = (entities: unknown): Array<{ entity: string; word: string }> => {
+  if (Array.isArray(entities)) {
+    return entities as Array<{ entity: string; word: string }>;
+  }
+
+  if (typeof entities === 'string' && entities.trim()) {
+    try {
+      const parsed = JSON.parse(entities);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
 export default function App() {
   const [articles, setArticles] = useState([]);
   const [stats, setStats] = useState(null);
@@ -65,6 +82,9 @@ export default function App() {
   };
 
   const COLORS = ['#10b981', '#f59e0b', '#ef4444']; // Green, Amber, Red
+  const SOURCE_COLORS = ['#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#fb7185'];
+  const riskData = stats ? Object.entries(stats.risk_distribution || {}).map(([name, value]) => ({ name, value })) : [];
+  const sourceData = stats ? Object.entries(stats.top_sources || {}).map(([name, value]) => ({ name, value })) : [];
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -123,7 +143,7 @@ export default function App() {
             <h3 className="text-lg font-semibold mb-6">Article Risk Distribution</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats ? Object.entries(stats.risk_distribution).map(([name, value]) => ({ name, value })) : []}>
+                <BarChart data={riskData}>
                   <XAxis dataKey="name" stroke="#64748b" />
                   <YAxis stroke="#64748b" />
                   <Tooltip 
@@ -136,22 +156,31 @@ export default function App() {
           </div>
           
           <div className="bg-slate-900 rounded-2xl p-8 border border-slate-800 shadow-xl">
-            <h3 className="text-lg font-semibold mb-6">Source Reliability</h3>
+            <h3 className="text-lg font-semibold mb-6">Top Data Sources</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={stats ? Object.entries(stats.risk_distribution).map(([name, value]) => ({ name, value })) : []}
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {COLORS.map((color, index) => <Cell key={`cell-${index}`} fill={color} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
+              {sourceData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={sourceData}
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={3}
+                      dataKey="value"
+                      nameKey="name"
+                    >
+                      {sourceData.map((_, index) => (
+                        <Cell key={`source-cell-${index}`} fill={SOURCE_COLORS[index % SOURCE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-slate-400">
+                  No indexed sources yet.
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -167,7 +196,11 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {articles.map((article, idx) => (
+            {articles.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-slate-400">
+                No indexed articles yet. Run ingestion + inference + indexing DAGs in Airflow, then refresh.
+              </div>
+            ) : articles.map((article, idx) => (
               <div 
                 key={idx} 
                 className="group bg-slate-900 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 p-6 rounded-2xl transition-all duration-300 shadow-md hover:shadow-2xl flex flex-col md:flex-row gap-6"
@@ -181,7 +214,7 @@ export default function App() {
                     }`}>
                       {article.credibility_category}
                     </span>
-                    <span className="text-sm text-slate-500">{article.source_name} • {article.timestamp}</span>
+                    <span className="text-sm text-slate-500">{article.source_name || 'Unknown Source'} • {article.timestamp}</span>
                   </div>
                   
                   <h4 className="text-lg font-semibold leading-tight group-hover:text-emerald-400 transition-colors">{article.content_title}</h4>
@@ -189,7 +222,7 @@ export default function App() {
                   
                   {/* Entities */}
                   <div className="flex flex-wrap gap-2">
-                    {JSON.parse(article.entities || "[]").slice(0, 3).map((ent, i) => (
+                    {parseEntities(article.entities).slice(0, 3).map((ent, i) => (
                       <span key={i} className="text-[10px] bg-slate-800 px-2 py-1 rounded border border-slate-700 text-slate-300 uppercase font-mono">
                         {ent.entity}: {ent.word}
                       </span>

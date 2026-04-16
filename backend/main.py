@@ -24,6 +24,34 @@ INDEX_NAME = os.getenv("ES_INDEX", "trustshield_articles")
 
 es = Elasticsearch(ES_HOST)
 
+INDEX_MAPPING = {
+    "mappings": {
+        "properties": {
+            "source_name": {"type": "keyword"},
+            "content_title": {"type": "text", "analyzer": "english"},
+            "url": {"type": "keyword"},
+            "timestamp": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss"},
+            "misinfo_probability": {"type": "float"},
+            "credibility_category": {"type": "keyword"},
+            "explanation": {"type": "text"},
+            "entities": {"type": "nested"}
+        }
+    }
+}
+
+
+def ensure_index_exists():
+    if not es.indices.exists(index=INDEX_NAME):
+        es.indices.create(index=INDEX_NAME, body=INDEX_MAPPING)
+
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        ensure_index_exists()
+    except Exception as e:
+        print(f"Startup index check failed: {e}")
+
 @app.get("/")
 def read_root():
     return {"status": "TrustShield API is running", "elasticsearch_connected": es.ping()}
@@ -32,6 +60,12 @@ def read_root():
 def health_check():
     # 1. Check Elasticsearch
     es_status = "Online" if es.ping() else "Offline"
+    index_exists = False
+    if es_status == "Online":
+        try:
+            index_exists = es.indices.exists(index=INDEX_NAME)
+        except Exception as e:
+            print(f"Index exists check failed: {e}")
 
     # 2. Get latest AI Model run info
     latest_run = {}
@@ -52,7 +86,8 @@ def health_check():
         "system": "Healthy",
         "database": {
             "elasticsearch": es_status,
-            "index_name": INDEX_NAME
+            "index_name": INDEX_NAME,
+            "index_exists": index_exists
         },
         "latest_ai_metrics": latest_run
     }
@@ -79,7 +114,7 @@ def get_articles(
         # Extract just the data (_source) from the ES response
         return [hit["_source"] for hit in response["hits"]["hits"]]
     except Exception as e:
-        print(f"Search error: {e}")
+        print(f"Search error in /articles: {e}")
         return []
 
 # 4. GET /search - Full-text search endpoint

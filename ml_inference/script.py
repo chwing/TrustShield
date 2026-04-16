@@ -1,4 +1,3 @@
-from transformers import pipeline
 import pandas as pd
 import json
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
@@ -40,6 +39,7 @@ def read_s3_parquet(s3, bucket, prefix):
 
 def run_ai_inference():
     # 0. Initialize Model Tracker & Env Vars
+    from transformers import pipeline
     model_name = os.getenv("DEFAULT_CLASSIFIER", "facebook/bart-large-mnli")
     ner_model = os.getenv("DEFAULT_NER", "dbmdz/bert-large-cased-finetuned-conll03-english")
     

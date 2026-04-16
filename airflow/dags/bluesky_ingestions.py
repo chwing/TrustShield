@@ -2,7 +2,14 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.datasets import Dataset
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from atproto import Client
+try:
+    from atproto import Client
+except ImportError:
+    try:
+        from atproto_client import Client
+    except ImportError:
+        print("Warning: atproto not found")
+        Client = None
 from datetime import datetime
 import json
 
