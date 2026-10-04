@@ -1,0 +1,52 @@
+-- TrustShield – DAX measures. Create them on fact_articles (Modeling > New measure),
+-- or in a dedicated empty "_Measures" table.
+
+-- ===== Volume =====
+Articles = COUNTROWS ( fact_articles )
+
+Articles Last 7 Days =
+CALCULATE (
+    [Articles],
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -7, DAY )
+)
+
+-- ===== Risk =====
+Avg Misinfo Probability = AVERAGE ( fact_articles[misinfo_probability] )
+
+High Risk Articles =
+CALCULATE ( [Articles], fact_articles[credibility_category] = "High Risk" )
+
+High Risk % = DIVIDE ( [High Risk Articles], [Articles] )
+
+-- Volume-weighted so a source with 2 articles doesn't outrank one with 2,000 on a ranking visual.
+Source Risk Score =
+VAR GlobalAvg = CALCULATE ( [Avg Misinfo Probability], ALL ( dim_source ) )
+VAR Prior     = 20    -- pseudo-article count pulling small samples toward the global mean
+RETURN
+    DIVIDE (
+        SUM ( fact_articles[misinfo_probability] ) + Prior * GlobalAvg,
+        [Articles] + Prior
+    )
+
+-- ===== Trend =====
+Avg Probability Prior Day =
+CALCULATE (
+    [Avg Misinfo Probability],
+    DATEADD ( dim_date[date], -1, DAY )
+)
+
+Risk Delta vs Prior Day = [Avg Misinfo Probability] - [Avg Probability Prior Day]
+
+Avg Probability 7d Rolling =
+AVERAGEX (
+    DATESINPERIOD ( dim_date[date], MAX ( dim_date[date] ), -7, DAY ),
+    [Avg Misinfo Probability]
+)
+
+-- ===== Entities =====
+Distinct Entities = DISTINCTCOUNT ( fact_entities[entity_text] )
+
+Entity Mentions = COUNTROWS ( fact_entities )
+
+-- ===== Model governance =====
+Model Versions In Data = DISTINCTCOUNT ( fact_articles[model_version] )
